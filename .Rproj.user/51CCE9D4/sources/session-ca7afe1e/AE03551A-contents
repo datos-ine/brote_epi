@@ -1697,7 +1697,7 @@ control_calidad_fechas <- function(datos, vars_solicitud) {
 
     # variable_tiempo_inicio debe ser POSIXct o cadena convertible
     if (!inherits(x, "POSIXct")) {
-      x2 <- try(as.POSIXct(x, tz =  "UTC"), silent = TRUE)
+      x2 <- try(as.POSIXct(x), silent = TRUE)
       if (inherits(x2, "try-error")) {
         res$ok <- FALSE
         res$errores <- c(res$errores,
@@ -1711,7 +1711,7 @@ control_calidad_fechas <- function(datos, vars_solicitud) {
 
     if (!is.null(y)) {
       if (!inherits(y, "POSIXct")) {
-        y2 <- try(as.POSIXct(y, tz ="UTC"), silent = TRUE)   # acepta "YYYY-MM-DD HH:MM"
+        y2 <- try(as.POSIXct(y), silent = TRUE)   # acepta "YYYY-MM-DD HH:MM"
         if (inherits(y2, "try-error")) {
           res$ok <- FALSE
           res$errores <- c(res$errores,
@@ -1870,7 +1870,7 @@ calcular_incubacion <- function(datos, vars_solicitud) {
     if (!inherits(ingesta, "POSIXct")) {
       tz_uso  <- tryCatch(attr(inicio, "tzone") %||% "", error = function(e) "")
       ingesta <- tryCatch(
-        as.POSIXct(ingesta, tz = "UTC"),
+        as.POSIXct(ingesta, tz = tz_uso),
         error = function(e) stop(
           "fecha_ingesta no es convertible a POSIXct: ", e$message)
       )

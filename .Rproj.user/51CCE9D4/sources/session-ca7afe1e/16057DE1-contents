@@ -1134,100 +1134,244 @@ calcular_tasas_ataque <- function(datos, variable_evento, variables_exposicion, 
 # FUNCIÓN AUXILIAR: GENERACIÓN ROBUSTA DE LA CURVA EPIDÉMICA
 # =====================================================================
 generar_grafico_curva_brote <- function(datos, var_inicio, config_yaml) {
-  library(ggplot2)
+ library(ggplot2)
   library(dplyr)
 
-  # 1. Configuración y Validación Inicial
-  unidad_tiempo_config <- if (!is.null(config_yaml$unidad_tiempo)) config_yaml$unidad_tiempo else NULL
+  # --- MODIFICACIÓN: PRIORIDAD AL YAML ---
+  unidad_tiempo_config <- config_yaml$unidad_tiempo
   
+  es_hora  <- FALSE
+  es_fecha <- FALSE
+  es_posix <- FALSE
+  
+  # Determinación forzada por configuración
+  if (!is.null(unidad_tiempo_config)) {
+    tipo <- tolower(unidad_tiempo_config)
+    if (tipo %in% c("datetime", "posix", "fecha_hora")) {
+      es_posix <- TRUE
+    } else if (tipo %in% c("hora", "horas", "hour", "hours")) {
+      es_hora  <- TRUE
+    } else {
+      es_fecha <- TRUE
+    }
+  } else {
+    # Fallback automático si no hay config en YAML
+    columna_temporal <- datos[[var_inicio]]
+    if (inherits(columna_temporal, "POSIXt")) {
+      es_posix <- TRUE
+    } else if (inherits(columna_temporal, "Date")) {
+      es_fecha <- TRUE
+    } else {
+      # Intento de detección por formato
+      fecha_test <- tryCatch({ as.Date(datos[[var_inicio]]) }, error = function(e) NULL)
+      if (!is.null(fecha_test) && !all(is.na(fecha_test))) {
+        es_fecha <- TRUE
+      } else if (is.numeric(datos[[var_inicio]])) {
+        es_hora <- TRUE
+      } else {
+        es_fecha <- TRUE # Default
+      }
+    }
+  }
+
+  # Validación de existencia
   if (is.null(var_inicio) || !(var_inicio %in% names(datos))) {
     return(ggplot() + annotate("text", x = 0.5, y = 0.5, label = "Variable temporal no encontrada", size = 5, col = "red") + theme_void())
   }
-  
-  # Detectar tipo
-  col_raw <- datos[[var_inicio]]
-  es_posix <- inherits(col_raw, c("POSIXct", "POSIXt")) || 
-              (!is.null(unidad_tiempo_config) && tolower(unidad_tiempo_config) %in% c("posix", "datetime", "fecha_hora"))
-  
-  es_fecha <- inherits(col_raw, "Date") || 
-              (!is.null(unidad_tiempo_config) && tolower(unidad_tiempo_config) %in% c("fecha", "dia", "date"))
-  
-  es_hora <- is.numeric(col_raw) || 
-             (!is.null(unidad_tiempo_config) && tolower(unidad_tiempo_config) %in% c("hora", "hour"))
 
+  # Verificar si hay configuración explícita de unidad de tiempo
+  #unidad_tiempo_config <- NULL
+  #if (!is.null(config_yaml$unidad_tiempo)) {
+  #  unidad_tiempo_config <- config_yaml$unidad_tiempo
+  #}
+  
+  # Determinar automáticamente el tipo si no está configurado
+  #if (is.null(var_inicio) || !(var_inicio %in% names(datos))) {
+  #  p <- ggplot() + 
+  #    annotate("text", x = 0.5, y = 0.5, label = "Variable temporal no encontrada", size = 5, col = "red") + 
+  #    theme_void()
+  #  return(p)
+  #}
+  
+  #columna_temporal <- datos[[var_inicio]]
+  #dato_tiempo <- columna_temporal # Fallback/alias para compatibilidad interna
+
+  #es_hora  <- FALSE
+  #es_fecha <- FALSE
+  #es_posix <- FALSE
+  
+  #if (inherits(columna_temporal, "POSIXt")) {
+  #  es_posix <- TRUE
+  #} else if (inherits(columna_temporal, "Date")) {
+  #  es_fecha <- TRUE
+  #} else {
+  #  es_fecha <- TRUE
+  #}
+  
+  #if (!is.null(unidad_tiempo_config)) {
+  #  if (tolower(unidad_tiempo_config) %in% c("fecha", "dia", "días", "dia", "date")) {
+  #    es_fecha <- TRUE
+  #    es_posix <- FALSE
+  #    es_hora  <- FALSE
+  #  } else if (tolower(unidad_tiempo_config) %in% c("hora", "horas", "hour", "hours")) {
+  #    es_hora  <- TRUE
+  #    es_posix <- FALSE
+  #    es_fecha <- FALSE
+  #  } else if (tolower(unidad_tiempo_config) %in% c("datetime", "posix", "fecha_hora")) {
+  #    es_posix <- TRUE
+  #    es_fecha <- FALSE
+  #    es_hora  <- FALSE
+  #  }
+  #} else {
+  #  fecha_test <- tryCatch({ as.Date(dato_tiempo) }, error = function(e) NULL)
+  #  if (!is.null(fecha_test) && !all(is.na(fecha_test))) {
+  #    es_fecha <- TRUE
+  #  } else if (is.numeric(dato_tiempo)) {
+  #    es_hora <- TRUE
+  #  }
+  #}
+  
+  # Inicializamos el objeto p para asegurar el retorno
   p <- NULL
-
-  # --- BLOQUE 1: FECHAS SIMPLES (DATE) ---
+  
+  # --- BLOQUE 1: MANEJO DE FECHAS ---
   if (es_fecha) {
-    datos_plot <- datos |> mutate(tiempo = as.Date(.data[[var_inicio]])) |> filter(!is.na(tiempo))
+    datos_plot <- datos |>
+      mutate(tiempo = as.Date(.data[[var_inicio]])) |>
+      filter(!is.na(tiempo))
     
-    if (nrow(datos_plot) == 0) return(ggplot() + annotate("text", x=0.5, y=0.5, label="No hay datos válidos", size=5) + theme_void())
+    if (nrow(datos_plot) == 0) {
+      return(ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No hay datos válidos (Fecha) para graficar", size = 5) + theme_void())
+    }
     
-    datos_count <- datos_plot |> group_by(tiempo) |> summarise(n_casos = n(), .groups = "drop")
+    datos_count <- datos_plot |>
+      group_by(tiempo) |>
+      summarise(n_casos = n(), .groups = "drop")
+    
     rango_fechas <- seq(min(datos_count$tiempo), max(datos_count$tiempo), by = "1 day")
-    datos_count_completo <- data.frame(tiempo = rango_fechas) |> left_join(datos_count, by = "tiempo") |> mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
-
+    datos_count_completo <- data.frame(tiempo = rango_fechas) |>
+      left_join(datos_count, by = "tiempo") |>
+      mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
+    
+    datos_lineas <- datos_count_completo |> filter(n_casos > 1)
+    
+    if (nrow(datos_lineas) > 0) {
+      datos_lineas <- do.call(rbind, lapply(1:nrow(datos_lineas), function(i) {
+        n <- datos_lineas$n_casos[i]
+        data.frame(tiempo = datos_lineas$tiempo[i], n_casos = n, linea = 1:(n-1))
+      }))
+    } else {
+      datos_lineas <- data.frame(tiempo = as.Date(character(0)), n_casos = numeric(0), linea = numeric(0))
+    }
+    
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8) +
-      scale_x_date(date_breaks = "1 day", date_labels = "%d/%m") +
-      labs(title = "Curva epidémica", x = "Fecha", y = "Número de casos") +
-      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-  # --- BLOQUE 2: HORAS NUMÉRICAS ---
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = 1)
+    
+    if (nrow(datos_lineas) > 0) {
+      p <- p + geom_hline(data = datos_lineas, aes(yintercept = linea), color = "white", linewidth = 0.3, alpha = 0.6)
+    }
+    
+    p <- p +
+      scale_x_date(date_breaks = "1 day", date_labels = "%d/%m", expand = expansion(mult = c(0.05, 0.05))) +
+      scale_y_continuous(breaks = function(x) seq(0, ceiling(max(x)), by = 1), expand = expansion(mult = c(0, 0.05))) +
+      labs(title = "Curva epidémica", x = "Fecha de inicio de síntomas", y = "Número de casos") +
+      theme_minimal(base_size = 12) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"), panel.grid.minor = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1))
+    
+  # --- BLOQUE 2: MANEJO DE HORAS (NUMÉRICO) ---
   } else if (es_hora) {
-    datos_plot <- datos |> mutate(tiempo = as.numeric(.data[[var_inicio]])) |> filter(!is.na(tiempo))
+    datos_plot <- datos |>
+      mutate(tiempo = as.numeric(.data[[var_inicio]])) |>
+      filter(!is.na(tiempo))
     
-    if (nrow(datos_plot) == 0) return(ggplot() + annotate("text", x=0.5, y=0.5, label="No hay datos válidos", size=5) + theme_void())
+    if (nrow(datos_plot) == 0) {
+      return(ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No hay datos válidos (Horas) para graficar", size = 5) + theme_void())
+    }
     
-    datos_count <- datos_plot |> group_by(tiempo) |> summarise(n_casos = n(), .groups = "drop")
-    rango_horas <- seq(min(datos_count$tiempo), max(datos_count$tiempo), by = 1)
-    datos_count_completo <- data.frame(tiempo = rango_horas) |> left_join(datos_count, by = "tiempo") |> mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
-
+    datos_count <- datos_plot |>
+      group_by(tiempo) |>
+      summarise(n_casos = n(), .groups = "drop")
+    
+    rango_horas <- seq(floor(min(datos_count$tiempo)), ceiling(max(datos_count$tiempo)), by = 1)
+    datos_count_completo <- data.frame(tiempo = rango_horas) |>
+      left_join(datos_count, by = "tiempo") |>
+      mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
+    
+    datos_lineas <- datos_count_completo |> filter(n_casos > 1)
+    
+    if (nrow(datos_lineas) > 0) {
+      datos_lineas <- do.call(rbind, lapply(1:nrow(datos_lineas), function(i) {
+        n <- datos_lineas$n_casos[i]
+        data.frame(tiempo = datos_lineas$tiempo[i], n_casos = n, linea = 1:(n-1))
+      }))
+    } else {
+      datos_lineas <- data.frame(tiempo = numeric(0), n_casos = numeric(0), linea = numeric(0))
+    }
+    
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8) +
-      labs(title = "Curva epidémica", x = "Horas", y = "Número de casos") +
-      theme_minimal()
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = 1)
+    
+    if (nrow(datos_lineas) > 0) {
+      p <- p + geom_hline(data = datos_lineas, aes(yintercept = linea), color = "white", linewidth = 0.3, alpha = 0.6)
+    }
+    
+    p <- p +
+      scale_x_continuous(breaks = seq(floor(min(datos_count$tiempo)), ceiling(max(datos_count$tiempo)), by = 1), expand = expansion(mult = c(0.05, 0.05))) +
+      scale_y_continuous(breaks = function(x) seq(0, ceiling(max(x)), by = 1), expand = expansion(mult = c(0, 0.05))) +
+      labs(title = "Curva epidémica", x = "Horas desde inicio de síntomas", y = "Número de casos") +
+      theme_minimal(base_size = 14) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"), panel.grid.minor = element_blank())
 
-  # --- BLOQUE 3: POSIX (FECHA + HORA) - OPTIMIZADO ---
-  } else if (es_posix) {
-    # Conversión segura a POSIXct
+  
+# --- BLOQUE 3: MANEJO DE MARCAS TEMPORALES COMPLETAS (POSIXct / ISO 8601) ---
+} else if (es_posix) {
+    # 1. Parseo robusto
+    col_raw <- datos[[var_inicio]]
     tiempo_vec <- if (inherits(col_raw, c("POSIXct", "POSIXt"))) {
       col_raw
     } else {
       as.POSIXct(sub("T", " ", sub("Z$", "", as.character(col_raw))), tz = "UTC")
     }
-    
+
     df_temp <- data.frame(tiempo = tiempo_vec) |> filter(!is.na(tiempo))
     
-    if (nrow(df_temp) == 0) return(ggplot() + annotate("text", x=0.5, y=0.5, label="No hay datos POSIX válidos", size=5) + theme_void())
+    # 2. Validación de datos vacíos
+    if (nrow(df_temp) == 0) {
+      return(ggplot() + annotate("text", x = 0.5, y = 0.5, label = "No hay datos POSIX válidos", size = 5) + theme_void())
+    }
 
-    # Determinar resolución
+    # 3. Determinar resolución (hora vs día)
     rango_seg <- as.numeric(difftime(max(df_temp$tiempo), min(df_temp$tiempo), units = "secs"))
     por_hora  <- isTRUE(rango_seg <= 3600 * 24)
     res_unit  <- if (por_hora) "hours" else "days"
     by_str    <- if (por_hora) "1 hour" else "1 day"
 
-    # Truncar y Contar
+    # 4. TRUNCAR DATOS (Esto alinea los datos exactamente a la hora/día)
     df_temp$tiempo_trunc <- trunc(df_temp$tiempo, units = res_unit)
+    
+    # 5. CONTAR (Agrupamos por el tiempo truncado)
     datos_count <- df_temp |> count(tiempo_trunc)
     
-    # Rango completo para evitar huecos en el gráfico
+    # 6. CREAR RANGO COMPLETO (Esto asegura que no falten horas/días)
     rango_completo <- seq(from = min(df_temp$tiempo_trunc), to = max(df_temp$tiempo_trunc), by = by_str)
     
+    # 7. UNIR (Llenamos con 0 donde no hubo casos)
     datos_count_completo <- data.frame(tiempo = rango_completo) |>
       left_join(datos_count, by = c("tiempo" = "tiempo_trunc")) |>
       mutate(n_casos = ifelse(is.na(n), 0, n))
 
-    # Graficar
+    # 8. Generar gráfico
+    ancho_barra <- if (por_hora) 3600 else 86400
+    lbl_fmt     <- if (por_hora) "%d/%m\n%Hh" else "%d/%m"
+    eje_x_lbl   <- if (por_hora) "Fecha y hora de inicio" else "Fecha de inicio"
+    
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = (if(por_hora) 3600 else 86400) * 0.9) +
-      scale_x_datetime(date_breaks = by_str, date_labels = if(por_hora) "%d/%m %H:%M" else "%d/%m") +
-      labs(title = "Curva epidémica", x = "Tiempo", y = "Número de casos") +
-      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
-      
-  } else {
-    p <- ggplot() + annotate("text", x=0.5, y=0.5, label="Unidad de tiempo no compatible", size=5) + theme_void()
-  }
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = ancho_barra * 0.9) +
+      scale_x_datetime(date_breaks = by_str, date_labels = lbl_fmt) +
+      scale_y_continuous(breaks = seq(0, max(datos_count_completo$n_casos, 1), by = 1)) +
+      labs(title = "Curva epidémica", x = eje_x_lbl, y = "Número de casos") +
+      theme_minimal(base_size = 12) +
+      theme(plot.title = element_text(hjust = 0.5, face = "bold"), axis.text.x = element_text(angle = 45, hjust = 1))
   
   return(p)
 }
@@ -1625,364 +1769,228 @@ render_tabla_or <- function(resultados_or) {
 }
 
 control_calidad_fechas <- function(datos, vars_solicitud) {
-
+  
   res <- list(ok = TRUE, errores = character(0), advertencias = character(0), resumen = NULL)
-
+  
+  # Extraer variables desde el objeto de solicitud
   var_inicio <- vars_solicitud$variable_tiempo_inicio
   var_ingesta <- vars_solicitud$fecha_ingesta
-  unidad     <- tolower(vars_solicitud$unidad_tiempo)
-
-  # ---- Validar unidad ----
-  if (!unidad %in% c("fecha", "fecha_hora", "hora")) {
-    res$ok     <- FALSE
-    res$errores <- c(res$errores,
-                     "unidad_tiempo debe ser 'fecha', 'fecha_hora' u 'hora'")
-    return(res)
-  }
-
-  # ---- Existencia de variable_tiempo_inicio ----
+  unidad <- tolower(vars_solicitud$unidad_tiempo)
+  
+  # --- existencia ---
   if (!var_inicio %in% names(datos)) {
-    res$ok     <- FALSE
+    res$ok <- FALSE
     res$errores <- c(res$errores, "No existe variable_tiempo_inicio en datos")
     return(res)
   }
-
-  x <- datos[[var_inicio]]
-
-  # ---- Resolver fecha_ingesta: columna vs. constante ----
-  ingesta_es_columna <- !is.null(var_ingesta) && is.character(var_ingesta) &&
-                          var_ingesta %in% names(datos)
-  ingesta_es_constante <- !is.null(var_ingesta) && !ingesta_es_columna
-
-  if (!is.null(var_ingesta) && ingesta_es_columna) {
-    y <- datos[[var_ingesta]]
-  } else if (ingesta_es_constante) {
-    y <- var_ingesta          # escalar; se expande al comparar
-  } else {
-    y <- NULL
+  
+  if (!is.null(var_ingesta) && !var_ingesta %in% names(datos)) {
+    res$ok <- FALSE
+    res$errores <- c(res$errores, "No existe variable fecha_ingesta en datos")
+    return(res)
   }
-
-  # ---- Validaciones por unidad ----
-
+  
+  x <- datos[[var_inicio]]
+  y <- if (!is.null(var_ingesta)) datos[[var_ingesta]] else NULL
+  
+  # --- tipo según unidad ---
   if (unidad == "fecha") {
-
+    
     if (!inherits(x, "Date")) {
       x2 <- try(as.Date(x), silent = TRUE)
       if (inherits(x2, "try-error")) {
         res$ok <- FALSE
-        res$errores <- c(res$errores,
-                         "variable_tiempo_inicio no es convertible a Date")
+        res$errores <- c(res$errores, "variable_tiempo_inicio no es Date convertible")
         return(res)
+      } else {
+        x <- x2
+        res$advertencias <- c(res$advertencias, "variable_tiempo_inicio convertida a Date")
       }
-      x <- x2
-      res$advertencias <- c(res$advertencias,
-                             "variable_tiempo_inicio convertida a Date")
     }
-
-    if (!is.null(y)) {
-      if (!inherits(y, "Date")) {
-        y2 <- try(as.Date(y), silent = TRUE)
-        if (inherits(y2, "try-error")) {
-          res$ok <- FALSE
-          res$errores <- c(res$errores, "fecha_ingesta no es convertible a Date")
-          return(res)
-        }
+    
+    if (!is.null(y) && !inherits(y, "Date")) {
+      y2 <- try(as.Date(y), silent = TRUE)
+      if (inherits(y2, "try-error")) {
+        res$ok <- FALSE
+        res$errores <- c(res$errores, "fecha_ingesta no es Date convertible")
+        return(res)
+      } else {
         y <- y2
         res$advertencias <- c(res$advertencias, "fecha_ingesta convertida a Date")
       }
     }
   }
-
-  if (unidad == "fecha_hora") {
-
-    # variable_tiempo_inicio debe ser POSIXct o cadena convertible
-    if (!inherits(x, "POSIXct")) {
-      x2 <- try(as.POSIXct(x, tz =  "UTC"), silent = TRUE)
-      if (inherits(x2, "try-error")) {
-        res$ok <- FALSE
-        res$errores <- c(res$errores,
-                         "variable_tiempo_inicio no es convertible a POSIXct")
-        return(res)
-      }
-      x <- x2
-      res$advertencias <- c(res$advertencias,
-                             "variable_tiempo_inicio convertida a POSIXct")
-    }
-
-    if (!is.null(y)) {
-      if (!inherits(y, "POSIXct")) {
-        y2 <- try(as.POSIXct(y, tz ="UTC"), silent = TRUE)   # acepta "YYYY-MM-DD HH:MM"
-        if (inherits(y2, "try-error")) {
-          res$ok <- FALSE
-          res$errores <- c(res$errores,
-            "fecha_ingesta no es convertible a POSIXct (use 'YYYY-MM-DD HH:MM')")
-          return(res)
-        }
-        y <- y2
-        res$advertencias <- c(res$advertencias,
-                               "fecha_ingesta convertida a POSIXct")
-      }
-    }
-  }
-
+  
   if (unidad == "hora") {
-
-    # variable_tiempo_inicio: numérico
-    if (!is.numeric(x)) {
-      x2 <- suppressWarnings(as.numeric(x))
-      if (all(is.na(x2))) {
-        res$ok <- FALSE
-        res$errores <- c(res$errores,
-                         "variable_tiempo_inicio no es convertible a numérico")
-        return(res)
-      }
-      x <- x2
-      res$advertencias <- c(res$advertencias,
-                             "variable_tiempo_inicio convertida a numérico")
-    }
-
-    # fecha_ingesta constante: puede llegar como character "8" o "8.5"
-    if (!is.null(y)) {
-      if (is.character(y)) {
-        y2 <- suppressWarnings(as.numeric(y))
-        if (is.na(y2)) {
-          res$ok <- FALSE
-          res$errores <- c(res$errores,
-            "fecha_ingesta (hora) no es convertible a numérico")
-          return(res)
-        }
-        y <- y2
-        res$advertencias <- c(res$advertencias,
-          "fecha_ingesta llegó como character; convertida a numérico. ",
-          "Considere definirla sin comillas en el YAML.")
-      } else if (!is.numeric(y)) {
-        res$ok <- FALSE
-        res$errores <- c(res$errores,
-                         "fecha_ingesta debe ser numérica para unidad 'hora'")
-        return(res)
-      }
-    }
-  }
-
-  # ---- Coherencia temporal ----
-  if (!is.null(y)) {
-
-    # Expandir constante escalar al tamaño de x
-    if (length(y) == 1) y <- rep(y, length(x))
-
-    incub <- if (unidad %in% c("fecha", "fecha_hora")) {
-      as.numeric(difftime(x, y,
-                          units = if (unidad == "hora") "hours" else
-                                  if (unidad == "fecha_hora") "hours" else "days"))
-    } else {
-      as.numeric(x) - as.numeric(y)
-    }
-
-    incub <- incub[!is.na(incub)]
-
-    if (length(incub) == 0) {
+    
+    if (!(is.numeric(x) || inherits(x, "POSIXct"))) {
       res$ok <- FALSE
-      res$errores <- c(res$errores,
-                       "No hay pares válidos para calcular incubación")
+      res$errores <- c(res$errores, "variable_tiempo_inicio debe ser numérica o POSIXct")
       return(res)
     }
-
-    if (any(incub < 0)) {
-      res$advertencias <- c(res$advertencias,
-                             "Existen incubaciones negativas (posible error en fechas)")
+    
+    if (!is.null(y) && !(is.numeric(y) || inherits(y, "POSIXct"))) {
+      res$ok <- FALSE
+      res$errores <- c(res$errores, "fecha_ingesta debe ser numérica o POSIXct")
+      return(res)
     }
-
-    umbral_horas <- switch(unidad,
-      hora       = 720,
-      fecha_hora = 720,
-      fecha      = 30   # días
-    )
-    if (any(incub > umbral_horas)) {
-      res$advertencias <- c(res$advertencias,
-        paste0("Incubaciones >", umbral_horas,
-               if (unidad == "fecha") " días" else " horas", " detectadas"))
+  }
+  
+  # --- coherencia temporal ---
+  if (!is.null(y)) {
+    
+    incub <- x - y
+    incub <- incub[!is.na(incub)]
+    
+    incub_num <- if (inherits(incub, "difftime")) {
+      as.numeric(incub, units = if (unidad == "hora") "hours" else "days")
+    } else {
+      as.numeric(incub)
     }
-
+    
+    if (length(incub_num) == 0) {
+      res$ok <- FALSE
+      res$errores <- c(res$errores, "No hay pares válidos para calcular incubación")
+      return(res)
+    }
+    
+    if (any(incub_num < 0)) {
+      res$advertencias <- c(res$advertencias, "Existen incubaciones negativas (posible error en fechas)")
+    }
+    
+    if (unidad == "hora" && any(incub_num > 720)) {
+      res$advertencias <- c(res$advertencias, "Incubaciones >30 días detectadas")
+    }
+    
     res$resumen <- list(
-      n_validos = length(incub),
-      mediana   = median(incub, na.rm = TRUE),
-      minimo    = min(incub,    na.rm = TRUE),
-      maximo    = max(incub,    na.rm = TRUE)
+      n_validos = length(incub_num),
+      mediana = median(incub_num, na.rm = TRUE),
+      minimo = min(incub_num, na.rm = TRUE),
+      maximo = max(incub_num, na.rm = TRUE)
     )
   }
-
+  
   return(res)
 }
 
 
 calcular_incubacion <- function(datos, vars_solicitud) {
-
-  if (is.null(vars_solicitud$variable_tiempo_inicio) ||
-      is.null(vars_solicitud$unidad_tiempo)) {
-    return(list(error =
-      "No se definió variable_tiempo_inicio o unidad_tiempo en YAML"))
+  
+  if (is.null(vars_solicitud$variable_tiempo_inicio) || is.null(vars_solicitud$unidad_tiempo)) {
+    return(list(error = "No se definió variable_tiempo_inicio o unidad_tiempo en YAML"))
   }
-
+  
   var_inicio <- vars_solicitud$variable_tiempo_inicio
-  unidad     <- tolower(vars_solicitud$unidad_tiempo)
-
-  if (!unidad %in% c("fecha", "fecha_hora", "hora")) {
-    return(list(error =
-      "unidad_tiempo debe ser 'fecha', 'fecha_hora' u 'hora'"))
-  }
-
+  unidad <- tolower(vars_solicitud$unidad_tiempo)
+  
   if (!var_inicio %in% names(datos)) {
-    return(list(error =
-      "La variable de inicio de síntomas no existe en los datos"))
+    return(list(error = "La variable de inicio de síntomas no existe en los datos"))
   }
-
+  
+  # ---- Obtener tiempo de inicio ----
   inicio <- datos[[var_inicio]]
-
-  # ---- Resolver fecha_ingesta ----
-  if (is.null(vars_solicitud$fecha_ingesta)) {
-    return(list(error = "No se definió fecha_ingesta en YAML"))
-  }
-
-  fi <- vars_solicitud$fecha_ingesta
-
-  if (is.character(fi) && fi %in% names(datos)) {
-    # Es el nombre de una columna
-    ingesta <- datos[[fi]]
-  } else {
-    # Es una constante: escalar que se repetirá
-    ingesta <- fi
-  }
-
-  # ---- Conversión y cálculo según unidad ----
-
-  if (unidad == "fecha_hora") {
-
-    # inicio → POSIXct
-    if (!inherits(inicio, "POSIXct")) {
-      inicio <- tryCatch(
-        as.POSIXct(inicio),
-        error = function(e) stop(
-          "variable_tiempo_inicio no es convertible a POSIXct: ", e$message)
-      )
-    }
-
-    # ingesta → POSIXct (acepta "YYYY-MM-DD HH:MM" o vector de columna)
-    if (!inherits(ingesta, "POSIXct")) {
-      tz_uso  <- tryCatch(attr(inicio, "tzone") %||% "", error = function(e) "")
-      ingesta <- tryCatch(
-        as.POSIXct(ingesta, tz = "UTC"),
-        error = function(e) stop(
-          "fecha_ingesta no es convertible a POSIXct: ", e$message)
-      )
-    }
-
-    if (length(ingesta) == 1) ingesta <- rep(ingesta, nrow(datos))
-
-    incubacion   <- as.numeric(difftime(inicio, ingesta, units = "hours"))
-    unidad_salida <- "horas"
-
-  } else if (unidad == "hora") {
-
-    # inicio numérico
-    if (!is.numeric(inicio)) {
-      inicio <- suppressWarnings(as.numeric(inicio))
-    }
-
-    # ingesta: constante numérica o columna numérica
-    if (is.character(ingesta)) {
-      ingesta <- suppressWarnings(as.numeric(ingesta))
-      if (is.na(ingesta)) {
-        return(list(error =
-          paste0("fecha_ingesta '", fi,
-                 "' no es convertible a numérico. ",
-                 "Defínala sin comillas en el YAML.")))
+  
+  # ---- Obtener tiempo de ingesta ----
+  if (!is.null(vars_solicitud$fecha_ingesta)) {
+    
+    # Si es nombre de variable
+    if (vars_solicitud$fecha_ingesta %in% names(datos)) {
+      ingesta <- datos[[vars_solicitud$fecha_ingesta]]
+    } else {
+      ingesta <- rep(vars_solicitud$fecha_ingesta, length(inicio))
+      
+      if (inherits(inicio, "POSIXct") && is.character(ingesta)) {
+        tz_uso  <- tryCatch(attr(inicio, "tzone"), error = function(e) "")
+        ingesta <- as.POSIXct(ingesta[1], tz = tz_uso)
+        ingesta <- rep(ingesta, length(inicio))
       }
     }
-    if (!is.numeric(ingesta)) {
-      ingesta <- as.numeric(ingesta)
-    }
-
-    if (length(ingesta) == 1) ingesta <- rep(ingesta, length(inicio))
-
-    incubacion   <- inicio - ingesta
-    unidad_salida <- "horas"
-
-  } else {  # "fecha"
-
-    inicio  <- as.Date(inicio)
-    ingesta <- as.Date(ingesta)   # funciona con columna o constante "YYYY-MM-DD"
-
-    if (length(ingesta) == 1) ingesta <- rep(ingesta, length(inicio))
-
-    incubacion   <- as.numeric(inicio - ingesta)
-    unidad_salida <- "días"
+    
+  } else {
+    return(list(error = "No se definió fecha_ingesta en YAML"))
   }
-
-  # ---- Limpiar ----
+  
+  # ---- Conversión según unidad ----
+  if (unidad == "hora") {
+    
+    # Caso POSIX
+    if (inherits(inicio, "POSIXct") || inherits(ingesta, "POSIXct")) {
+      incubacion <- as.numeric(difftime(inicio, ingesta, units = "hours"))
+    } else {
+      # Numérico (horas)
+      incubacion <- as.numeric(inicio) - as.numeric(ingesta)
+    }
+    
+    unidad_salida <- "horas"
+    
+  } else if (unidad == "fecha") {
+    
+    inicio <- as.Date(inicio)
+    ingesta <- as.Date(ingesta)
+    incubacion <- as.numeric(inicio - ingesta)
+    
+    unidad_salida <- "días"
+    
+  } else {
+    return(list(error = "unidad_tiempo debe ser 'hora' o 'fecha'"))
+  }
+  
+  # ---- Limpiar datos ----
   incubacion <- incubacion[!is.na(incubacion)]
   incubacion <- incubacion[incubacion >= 0]
-
+  
   if (length(incubacion) < 3) {
-    return(list(error =
-      "No hay suficientes datos válidos para calcular incubación"))
+    return(list(error = "No hay suficientes datos válidos para calcular incubación"))
   }
-
+  
   # ---- Estadísticos ----
   mediana <- median(incubacion)
-  q1      <- quantile(incubacion, 0.25)
-  q3      <- quantile(incubacion, 0.75)
-  minimo  <- min(incubacion)
-  maximo  <- max(incubacion)
-  n       <- length(incubacion)
-
+  q1 <- quantile(incubacion, 0.25)
+  q3 <- quantile(incubacion, 0.75)
+  minimo <- min(incubacion)
+  maximo <- max(incubacion)
+  n <- length(incubacion)
+  
+  # ---- Clasificación orientativa ----
   clasificacion <- clasificar_incubacion(mediana, unidad_salida)
-
+  
   return(list(
     mediana = round(mediana, 2),
-    q1      = round(q1, 2),
-    q3      = round(q3, 2),
-    minimo  = round(minimo, 2),
-    maximo  = round(maximo, 2),
-    n       = n,
-    unidad  = unidad_salida,
+    q1 = round(q1, 2),
+    q3 = round(q3, 2),
+    minimo = round(minimo, 2),
+    maximo = round(maximo, 2),
+    n = n,
+    unidad = unidad_salida,
     clasificacion = clasificacion,
+    # Mantener resumen para retrocompatibilidad
     resumen = list(
-      Mediana    = round(mediana, 2),
-      Q1         = round(q1, 2),
-      Q3         = round(q3, 2),
-      Mínimo     = round(minimo, 2),
-      Máximo     = round(maximo, 2),
+      Mediana = round(mediana, 2),
+      Q1 = round(q1, 2),
+      Q3 = round(q3, 2),
+      Mínimo = round(minimo, 2),
+      Máximo = round(maximo, 2),
       `N válidos` = n
     )
   ))
 }
 
-
-# -----------------------------------------------------------------------------
-# CLASIFICACIÓN ORIENTATIVA
-# -----------------------------------------------------------------------------
-
 clasificar_incubacion <- function(mediana, unidad) {
-
-  # Normalizar siempre a horas para comparar
-  mediana_h <- if (unidad == "días") mediana * 24 else mediana
-
-  if (mediana_h <= 6) {
-    "Mediana menor o igual a 6 horas"
-  } else if (mediana_h <= 16) {
-    "Mediana menor o igual a 16 horas"
-  } else if (mediana_h <= 48) {
-    "Mediana menor o igual a 48 horas"
+  
+  if (unidad == "días") {
+    mediana <- mediana * 24
+  }
+  
+  if (mediana <= 6) {
+    return("Mediana menor o igual a 6 horas)")
+  } else if (mediana <= 16) {
+    return("Mediana menor o igual a 16 horas")
+  } else if (mediana <= 48) {
+    return("Mediana menor o igual a 48 horas")
   } else {
-    "Mediana mayor a 48 horas"
+    return("Mediana mayor a 48 horas")
   }
 }
-
-
-# -----------------------------------------------------------------------------
-# HELPER: operador %||% (null-coalescing) si no está disponible
-# -----------------------------------------------------------------------------
-`%||%` <- function(a, b) if (!is.null(a)) a else b
 
 convertir_incubacion_a_html <- function(res) {
 
