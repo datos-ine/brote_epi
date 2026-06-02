@@ -681,6 +681,9 @@ convertir_or_a_html <- function(resultados_or) {
           <th>Valor p</th>
         </tr>
       </thead>
+      <tbody>
+        %s
+      </tbody>
     </table>
   ", paste(filas_html, collapse = "\n"))
   

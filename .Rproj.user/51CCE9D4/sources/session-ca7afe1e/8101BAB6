@@ -3,7 +3,7 @@
     "path": "~/Cursos 2026/brote_epi/index.qmd",
     "project_path": "index.qmd",
     "type": "quarto_markdown",
-    "hash": "966465341",
+    "hash": "4140527950",
     "contents": "",
     "dirty": false,
     "created": 1780233160270.0,
@@ -12,15 +12,15 @@
     "properties": {
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "1203,7",
-        "scrollLine": "1184"
+        "cursorPosition": "733,8",
+        "scrollLine": "717"
     },
     "folds": "",
-    "lastKnownWriteTime": 1780397300,
+    "lastKnownWriteTime": 1780398881,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1780397300768,
+    "last_content_update": 1780398881498,
     "read_only": false,
     "read_only_alternatives": []
 }
