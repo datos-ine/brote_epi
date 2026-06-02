@@ -1120,11 +1120,41 @@ generar_grafico_curva_brote <- function(datos, var_inicio, config_yaml) {
     datos_count_completo <- data.frame(tiempo = rango_fechas) |> left_join(datos_count, by = "tiempo") |> mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
 
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8) +
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = 1) +
       scale_x_date(date_breaks = "1 day", date_labels = "%d/%m") +
       labs(title = "Curva epidémica", x = "Fecha", y = "Número de casos") +
       theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+    # Crear datos para líneas horizontales (sin usar crossing de tidyr)
+      datos_lineas <- datos_count_completo |>
+        filter(n_casos > 1)
+      
+      if (nrow(datos_lineas) > 0) {
+        # Crear producto cartesiano manualmente
+        max_casos <- max(datos_count_completo$n_casos)
+        datos_lineas <- do.call(rbind, lapply(1:nrow(datos_lineas), function(i) {
+          n <- datos_lineas$n_casos[i]
+          data.frame(
+            tiempo = datos_lineas$tiempo[i],
+            n_casos = n,
+            linea = 1:(n-1)  # Líneas desde 1 hasta n-1
+          )
+        }))
+      } else {
+        datos_lineas <- data.frame(tiempo = as.Date(character(0)), n_casos = numeric(0), linea = numeric(0))
+      }
+
+      # Agregar líneas horizontales si hay datos
+      if (nrow(datos_lineas) > 0) {
+        p <- p + geom_hline(
+          data = datos_lineas,
+          aes(yintercept = linea),
+          color = "white",
+          linewidth = 0.3,
+          alpha = 0.6
+        )
+      }
+    
   # --- BLOQUE 2: HORAS NUMÉRICAS ---
   } else if (es_hora) {
     datos_plot <- datos |> mutate(tiempo = as.numeric(.data[[var_inicio]])) |> filter(!is.na(tiempo))
@@ -1136,10 +1166,41 @@ generar_grafico_curva_brote <- function(datos, var_inicio, config_yaml) {
     datos_count_completo <- data.frame(tiempo = rango_horas) |> left_join(datos_count, by = "tiempo") |> mutate(n_casos = ifelse(is.na(n_casos), 0, n_casos))
 
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8) +
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, , width = 1) +
       labs(title = "Curva epidémica", x = "Horas", y = "Número de casos") +
       theme_minimal()
 
+    # Crear datos para líneas horizontales (sin usar crossing de tidyr)
+      datos_lineas <- datos_count_completo |>
+        filter(n_casos > 1)
+      
+      if (nrow(datos_lineas) > 0) {
+        # Crear producto cartesiano manualmente
+        max_casos <- max(datos_count_completo$n_casos)
+        datos_lineas <- do.call(rbind, lapply(1:nrow(datos_lineas), function(i) {
+          n <- datos_lineas$n_casos[i]
+          data.frame(
+            tiempo = datos_lineas$tiempo[i],
+            n_casos = n,
+            linea = 1:(n-1)  # Líneas desde 1 hasta n-1
+          )
+        }))
+      } else {
+        datos_lineas <- data.frame(tiempo = as.Date(character(0)), n_casos = numeric(0), linea = numeric(0))
+      }
+
+      # Agregar líneas horizontales si hay datos
+      if (nrow(datos_lineas) > 0) {
+        p <- p + geom_hline(
+          data = datos_lineas,
+          aes(yintercept = linea),
+          color = "white",
+          linewidth = 0.3,
+          alpha = 0.6
+        )
+      }
+
+    
   # --- BLOQUE 3: POSIX (FECHA + HORA) - OPTIMIZADO ---
   } else if (es_posix) {
     # Conversión segura a POSIXct
@@ -1172,11 +1233,42 @@ generar_grafico_curva_brote <- function(datos, var_inicio, config_yaml) {
 
     # Graficar
     p <- ggplot(datos_count_completo, aes(x = tiempo, y = n_casos)) +
-      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = (if(por_hora) 3600 else 86400) * 0.9) +
+      geom_col(fill = "#006666", color = "white", alpha = 0.8, width = (if(por_hora) 3600 else 86400) * 1) +
       scale_x_datetime(date_breaks = by_str, date_labels = if(por_hora) "%d/%m %H:%M" else "%d/%m") +
       labs(title = "Curva epidémica", x = "Tiempo", y = "Número de casos") +
       theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
       
+    # Crear datos para líneas horizontales (sin usar crossing de tidyr)
+      datos_lineas <- datos_count_completo |>
+        filter(n_casos > 1)
+      
+      if (nrow(datos_lineas) > 0) {
+        # Crear producto cartesiano manualmente
+        max_casos <- max(datos_count_completo$n_casos)
+        datos_lineas <- do.call(rbind, lapply(1:nrow(datos_lineas), function(i) {
+          n <- datos_lineas$n_casos[i]
+          data.frame(
+            tiempo = datos_lineas$tiempo[i],
+            n_casos = n,
+            linea = 1:(n-1)  # Líneas desde 1 hasta n-1
+          )
+        }))
+      } else {
+        datos_lineas <- data.frame(tiempo = as.Date(character(0)), n_casos = numeric(0), linea = numeric(0))
+      }
+
+      # Agregar líneas horizontales si hay datos
+      if (nrow(datos_lineas) > 0) {
+        p <- p + geom_hline(
+          data = datos_lineas,
+          aes(yintercept = linea),
+          color = "white",
+          linewidth = 0.3,
+          alpha = 0.6
+        )
+      }
+
+    
   } else {
     p <- ggplot() + annotate("text", x=0.5, y=0.5, label="Unidad de tiempo no compatible", size=5) + theme_void()
   }
