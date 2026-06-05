@@ -743,9 +743,25 @@ convertir_or_a_html <- function(resultados_or) {
 # ===========================================================================
 
 # Función para calcular frecuencia combinada de síntomas
-calcular_frecuencia_combinada_sintomas <- function(datos, vars_sintomas) {
+calcular_frecuencia_combinada_sintomas <- function(datos, vars_sintomas, var_evento = NULL ) {
   if (is.null(vars_sintomas) || length(vars_sintomas) == 0) {
     return(list(error = "No hay variables de síntomas definidas"))
+  }
+  
+  # ==============================
+  # Filtrar solo casos (evento == TRUE)
+  # ==============================
+
+  if (!is.null(var_evento)) {
+    if (!var_evento %in% names(datos)) {
+      return(list(error = sprintf("La variable de evento '%s' no existe en los datos", var_evento)))
+    }
+    col_evento <- convertir_a_logico(datos[[var_evento]])
+    datos <- datos[!is.na(col_evento) & col_evento == TRUE, ]
+
+    if (nrow(datos) == 0) {
+      return(list(error = "No hay casos con evento == TRUE en los datos"))
+    }
   }
   
   # Extraer nombres de variables de síntomas
@@ -796,10 +812,27 @@ calcular_frecuencia_combinada_sintomas <- function(datos, vars_sintomas) {
   return(tabla_freq)
 }
 
-calcular_frecuencia_simple_sintomas <- function(datos, vars_sintomas) {
+calcular_frecuencia_simple_sintomas <- function(datos, vars_sintomas, var_evento = NULL) {
   
   if (is.null(vars_sintomas) || length(vars_sintomas) == 0) {
     return(list(error = "No hay variables de síntomas definidas"))
+  }
+  
+
+  # ==============================
+  # Filtrar solo casos (evento == TRUE)
+  # ==============================
+
+  if (!is.null(var_evento)) {
+    if (!var_evento %in% names(datos)) {
+      return(list(error = sprintf("La variable de evento '%s' no existe en los datos", var_evento)))
+    }
+    col_evento <- convertir_a_logico(datos[[var_evento]])
+    datos <- datos[!is.na(col_evento) & col_evento == TRUE, ]
+    
+    if (nrow(datos) == 0) {
+      return(list(error = "No hay casos con evento == TRUE en los datos"))
+    }
   }
   
   # ==============================
@@ -842,7 +875,7 @@ calcular_frecuencia_simple_sintomas <- function(datos, vars_sintomas) {
     sum(col == TRUE, na.rm = TRUE)
   })
   
-  total_obs <- nrow(datos_sintomas)
+  total_obs <- nrow(datos)
   
   porcentaje <- round(100 * frecuencia / total_obs, 2)
   
@@ -2961,7 +2994,7 @@ output$tabla_freq_simple <- renderUI({
       return(div(class = "alert alert-warning", "No hay variables de síntomas definidas en el YAML"))
     }
     
-    tabla_freq <- calcular_frecuencia_simple_sintomas(datos = info$datos, vars_sintomas = vars$sintomas)
+    tabla_freq <- calcular_frecuencia_simple_sintomas(datos = info$datos, vars_sintomas = vars$sintomas, vars$evento)
     estado$freq_simple <- tabla_freq
     
     if (!is.null(tabla_freq$error)) return(div(class = "alert alert-warning", tabla_freq$error))
@@ -3013,7 +3046,8 @@ output$tabla_freq_simple <- renderUI({
     # Calcular frecuencia combinada de síntomas
     tabla_freq <- calcular_frecuencia_combinada_sintomas(
       datos = info$datos,
-      vars_sintomas = vars$sintomas
+      vars_sintomas = vars$sintomas,
+      vars$evento
     )
     
     # Almacenar resultados para la descarga
