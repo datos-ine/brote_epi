@@ -1029,8 +1029,8 @@ render_univariada <- function(resultados) {
 # Optimización: Conversión a lógico más eficiente con vectorización
 convertir_a_logico <- function(x) {
   # Vectores de valores verdaderos y falsos (constantes)
-  .true_vals <- c("VERDADERO", "TRUE", "T", "SI", "SÍ", "YES", "Y", "1", "V", "S")
-  .false_vals <- c("FALSO", "FALSE", "F", "NO", "N", "0")
+  .true_vals <- c("VERDADERO", "TRUE", "T", "SI", "SÍ", "YES", "Y", "1", "V", "S", "COMIO", "COMIÓ", "CASO")
+  .false_vals <- c("FALSO", "FALSE", "F", "NO", "N", "0", "NO COMIO", "NO COMIÓ", "CONTROL")
   
   if (is.logical(x)) return(x)
   if (is.numeric(x)) return(ifelse(x == 1, TRUE, ifelse(x == 0, FALSE, NA)))
@@ -1252,10 +1252,14 @@ generar_grafico_curva_brote <- function(datos, var_inicio, config_yaml) {
 
     # Determinar resolución
     rango_seg <- as.numeric(difftime(max(df_temp$tiempo), min(df_temp$tiempo), units = "secs"))
-    por_hora  <- isTRUE(rango_seg <= 3600 * 24)
+    # por_hora  <- isTRUE(rango_seg <= 3600 * 24)
+    # res_unit  <- if (por_hora) "hours" else "days"
+    # by_str    <- if (por_hora) "1 hour" else "1 day"
+
+    por_hora  <- TRUE
     res_unit  <- if (por_hora) "hours" else "days"
     by_str    <- if (por_hora) "1 hour" else "1 day"
-
+    
     # Truncar y Contar
     df_temp$tiempo_trunc <- trunc(df_temp$tiempo, units = res_unit)
     datos_count <- df_temp |> count(tiempo_trunc)
